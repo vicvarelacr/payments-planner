@@ -21,7 +21,7 @@
       fxSource: "BCR (manual)",
       buffer: 0,           // minimum USD to keep as cushion
       reminderDaysBefore: 2,
-      gistRawUrl: "",      // sync source: private repo API URL or a gist raw URL
+      gistRawUrl: "https://api.github.com/repos/vicvarelacr/payments-data/contents/payments.json", // private data source
       syncToken: ""        // read-only GitHub token (stays on this device); needed for a private repo
     },
     payments: [],
