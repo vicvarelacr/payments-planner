@@ -847,8 +847,11 @@
         match.notes = (match.notes ? match.notes + " " : "") + "[from email " + mKey + "]";
         updated++;
       });
+      const unmatched = Array.isArray(data.unmatched) ? data.unmatched.length : 0;
       if (updated) { save(); render(); }
-      toast(updated ? ("Synced " + updated + " amount(s)") : "Nothing new to sync");
+      let msg = updated ? ("Synced " + updated + " update(s)") : "Nothing new to sync";
+      if (unmatched) msg += " \u00b7 " + unmatched + " bill(s) not matched";
+      toast(msg);
     } catch (err) {
       alert("Sync failed. Check the Gist link in Settings.\n\n" + err.message);
     }
