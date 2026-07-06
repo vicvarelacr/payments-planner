@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Payments Planner</title>
+  <meta name="theme-color" content="#0f172a" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icon.svg" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Payments" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <h1 id="header-title">Payments Planner</h1>
+    <button id="sync-btn" class="icon-btn" title="Sync from cloud" aria-label="Sync from cloud">Sync</button>
+  </header>
+
+  <main id="view" class="view"></main>
+
+  <nav class="tabbar" role="navigation">
+    <button class="tab" data-tab="dashboard">Home</button>
+    <button class="tab" data-tab="payments">Payments</button>
+    <button class="tab" data-tab="optimize">Optimize</button>
+    <button class="tab" data-tab="settings">Settings</button>
+  </nav>
+
+  <div id="modal-root"></div>
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
