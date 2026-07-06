@@ -12,14 +12,11 @@
   // ---------- State ----------
   const defaultState = () => ({
     settings: {
-      payDay: 30,          // day of month the paycheck lands
-      paycheckNet: 0,      // net paycheck in USD
-      startingCash: 0,     // optional cash on hand at start of cycle (USD)
-      fxRate: 447,         // colones (CRC) per 1 USD - BCR compra rate (you convert USD->CRC); update in Settings
+      payDay: 28,          // day of month the paycheck lands (used only for the countdown)
+      fxRate: 447,         // colones (CRC) per 1 USD - BCR compra rate; used only for the consolidated total
       fxAuto: true,        // auto-refresh the rate once a day when the app opens
       fxUpdated: "",       // YYYY-MM-DD of last auto-refresh
       fxSource: "BCR (manual)",
-      buffer: 0,           // minimum USD to keep as cushion
       reminderDaysBefore: 2,
       gistRawUrl: "https://api.github.com/repos/vicvarelacr/payments-data/contents/payments.json", // private data source
       syncToken: ""        // read-only GitHub token (stays on this device); needed for a private repo
@@ -78,10 +75,6 @@
     if (today < thisMonth) return thisMonth;
     // payday already reached/passed this month -> next month
     return dateFor(today.getFullYear(), today.getMonth() + 1, state.settings.payDay);
-  }
-  function lastPayday(from) {
-    const np = nextPayday(from);
-    return dateFor(np.getFullYear(), np.getMonth() - 1, state.settings.payDay);
   }
   function daysUntil(date, from) {
     return Math.round((startOfDay(date) - startOfDay(from)) / MS_DAY);
@@ -159,7 +152,6 @@
     const now = new Date();
     if (currentTab === "dashboard") viewEl.innerHTML = renderDashboard(now);
     else if (currentTab === "payments") viewEl.innerHTML = renderPayments(now);
-    else if (currentTab === "optimize") viewEl.innerHTML = renderOptimize(now);
     else if (currentTab === "settings") viewEl.innerHTML = renderSettings();
     bindViewEvents();
     window.scrollTo(0, 0);
@@ -177,9 +169,9 @@
     const np = nextPayday(now);
     const daysToPay = daysUntil(np, now);
 
-    if (state.settings.paycheckNet <= 0 && state.payments.length === 0) {
+    if (state.payments.length === 0) {
       return `<div class="card"><div class="empty">
-        Welcome. Start by adding your paycheck in <b>Settings</b>, then add your monthly payments under <b>Payments</b>.
+        Welcome. Add your monthly payments under <b>Payments</b>, then set your payday in <b>Settings</b>.
       </div></div>`;
     }
 
@@ -324,130 +316,24 @@
     return html;
   }
 
-  // ---------- Optimize ----------
-  function renderOptimize(now) {
-    const s = state.settings;
-    if (s.paycheckNet <= 0) {
-      return `<div class="card"><div class="empty">Add your paycheck amount in <b>Settings</b> to see the cash-flow plan.</div></div>`;
-    }
-    const start = lastPayday(now);
-    const end = nextPayday(now);
-
-    // Payments falling within [start, end)
-    const items = [];
-    let dueUSD = 0, dueCRC = 0;
-    state.payments.forEach(p => {
-      // candidate due dates in the two months the window can span
-      [dueDateInMonth(p, start.getFullYear(), start.getMonth()),
-       dueDateInMonth(p, end.getFullYear(), end.getMonth())].forEach(due => {
-        if (due >= start && due < end) {
-          const mKey = monthKey(due);
-          const amt = effectiveAmount(p, mKey);
-          const cur = p.currency === "CRC" ? "CRC" : "USD";
-          if (cur === "CRC") dueCRC += amt; else dueUSD += amt;
-          items.push({ p, due, mKey, amt, cur, usd: toUSD(amt, p.currency), paid: isPaid(p, mKey) });
-        }
-      });
-    });
-    items.sort((a, b) => a.due - b.due);
-
-    let bal = (Number(s.paycheckNet) || 0) + (Number(s.startingCash) || 0);
-    const buffer = Number(s.buffer) || 0;
-    let minBal = bal;
-    const totalDue = items.reduce((sum, it) => sum + it.usd, 0);
-
-    let rows = items.map(it => {
-      bal -= it.usd;
-      if (bal < minBal) minBal = bal;
-      const low = bal < buffer;
-      const nativeLine = it.cur === "CRC"
-        ? `-${fmtMoney(it.amt, "CRC")} (~${fmtUSD(it.usd)})`
-        : `-${fmtMoney(it.amt, "USD")}`;
-      return `<div class="timeline-row">
-        <div class="tl-date">${it.due.toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>
-        <div class="tl-body">
-          <div class="tl-name">${esc(it.p.name)} ${it.paid ? '<span class="badge paid">paid</span>' : ""}</div>
-          <div class="pay-meta">${nativeLine}</div>
-        </div>
-        <div class="tl-bal ${low ? "low" : ""}">${fmtUSD(bal)}</div>
-      </div>`;
-    }).join("");
-
-    let html = `<div class="card">
-      <h2>This cycle (native amounts)</h2>
-      <div class="grid-2">
-        <div><div class="sub">USD due</div><div class="big-number" style="font-size:20px">${fmtMoney(dueUSD, "USD")}</div></div>
-        <div style="text-align:right"><div class="sub">CRC due</div><div class="big-number" style="font-size:20px">${fmtMoney(dueCRC, "CRC")}</div></div>
-      </div>
-      <hr class="hr"/>
-      <div class="row">
-        <div><div class="sub">Paycheck + cash</div><div class="big-number" style="font-size:20px">${fmtUSD((Number(s.paycheckNet)||0)+(Number(s.startingCash)||0))}</div></div>
-        <div style="text-align:right"><div class="sub">Consolidated due (USD equiv)</div><div class="big-number" style="font-size:20px">${fmtUSD(totalDue)}</div></div>
-      </div>
-      <hr class="hr"/>
-      <div class="row"><div class="sub">Projected lowest balance (USD equiv)</div><div class="tl-bal ${minBal < buffer ? "low" : ""}">${fmtUSD(minBal)}</div></div>
-      <div class="sub">${start.toLocaleDateString("en-US",{month:"short",day:"numeric"})} to ${end.toLocaleDateString("en-US",{month:"short",day:"numeric"})} &middot; at \u20a1${s.fxRate}/USD</div>
-    </div>`;
-
-    // Tips
-    html += `<div class="card"><h2>Suggestions</h2>`;
-    html += tips(items, totalDue, minBal, buffer, now).join("");
-    html += `</div>`;
-
-    // Timeline
-    html += `<div class="card"><h2>Cash-flow timeline (balance in USD equiv)</h2>`;
-    html += rows || `<div class="empty">No payments in this cycle.</div>`;
-    html += `</div>`;
-
-    return html;
-  }
-
-  function tips(items, totalDue, minBal, buffer, now) {
-    const s = state.settings;
-    const pay = (Number(s.paycheckNet) || 0) + (Number(s.startingCash) || 0);
-    const out = [];
-    if (totalDue > pay) {
-      out.push(`<div class="tip bad">Your bills this cycle (${fmtUSD(totalDue)}) are more than your paycheck (${fmtUSD(pay)}). Move a flexible bill to next cycle, or cover the gap from savings.</div>`);
-    } else if (minBal < buffer) {
-      out.push(`<div class="tip warn">Balance dips to ${fmtUSD(minBal)}, below your ${fmtUSD(buffer)} cushion. Consider paying non-urgent bills a few days later.</div>`);
-    } else {
-      out.push(`<div class="tip good">You stay above your cushion all cycle. You can pay fixed and autopay bills right after payday.</div>`);
-    }
-    const needsList = state.payments.filter(p => needsAmount(p, monthKey(now), now));
-    if (needsList.length) {
-      out.push(`<div class="tip warn">Confirm real amounts for: ${needsList.map(p => esc(p.name)).join(", ")}. They are due soon and still use an estimate.</div>`);
-    }
-    const autopay = items.filter(it => it.p.autopay && !it.paid);
-    if (autopay.length) {
-      out.push(`<div class="tip">${autopay.length} autopay bill(s) will pull automatically. Make sure the balance is there on their dates.</div>`);
-    }
-    return out;
-  }
-
   // ---------- Settings ----------
   function renderSettings() {
     const s = state.settings;
     return `
     <div class="card">
-      <h2>Paycheck</h2>
-      <label>Pay day of month (1-28 recommended)</label>
+      <h2>Payday</h2>
+      <label>Pay day of month (used only for the countdown)</label>
       <input id="set-payday" type="number" min="1" max="31" value="${s.payDay}" />
-      <label>Net paycheck (USD)</label>
-      <input id="set-paycheck" type="number" min="0" step="0.01" value="${s.paycheckNet}" />
-      <label>Cash on hand at start of cycle (USD, optional)</label>
-      <input id="set-cash" type="number" min="0" step="0.01" value="${s.startingCash}" />
     </div>
 
     <div class="card">
       <h2>Rules</h2>
-      <label>Exchange rate (colones per 1 USD)</label>
+      <label>Exchange rate (colones per 1 USD, for the combined total only)</label>
       <input id="set-fx" type="number" min="1" step="0.01" value="${s.fxRate}" />
       <div class="sub" style="margin-top:6px">Source: ${esc(s.fxSource || "manual")}${s.fxUpdated ? " &middot; updated " + esc(s.fxUpdated) : ""}</div>
       <label style="margin-top:12px"><input type="checkbox" id="set-fxauto" ${s.fxAuto ? "checked" : ""} style="width:auto;margin-right:8px" />Auto-refresh rate daily when I open the app</label>
       <button class="btn secondary small" id="fx-now" style="margin-top:8px">Update rate now</button>
-      <label style="margin-top:14px">Minimum cash cushion to keep (USD)</label>
-      <input id="set-buffer" type="number" min="0" step="0.01" value="${s.buffer}" />
-      <label>Reminder days before due date</label>
+      <label style="margin-top:14px">Reminder days before due date</label>
       <input id="set-remind" type="number" min="0" max="14" value="${s.reminderDaysBefore}" />
       <button class="btn" id="save-settings" style="margin-top:16px">Save settings</button>
     </div>
@@ -693,8 +579,6 @@
   function saveSettings() {
     const g = id => viewEl.querySelector(id);
     state.settings.payDay = Math.max(1, Math.min(31, parseInt(g("#set-payday").value) || 1));
-    state.settings.paycheckNet = parseFloat(g("#set-paycheck").value) || 0;
-    state.settings.startingCash = parseFloat(g("#set-cash").value) || 0;
     const newFx = parseFloat(g("#set-fx").value) || 1;
     if (newFx !== state.settings.fxRate) {
       state.settings.fxSource = "BCR (manual)";
@@ -702,7 +586,6 @@
     }
     state.settings.fxRate = newFx;
     state.settings.fxAuto = g("#set-fxauto").checked;
-    state.settings.buffer = parseFloat(g("#set-buffer").value) || 0;
     state.settings.reminderDaysBefore = Math.max(0, Math.min(14, parseInt(g("#set-remind").value) || 0));
     save(); render(); toast("Settings saved");
   }
